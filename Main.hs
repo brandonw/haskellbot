@@ -75,13 +75,11 @@ listen h = forever $ do
     params xs           = tail . dropWhile (/= ' ') $ xs
     pong                = write "PONG"
 
-updateBotSentNick :: IO Bot -> IO Bot
-updateBotSentNick b = do b' <- b
-                         return $ Bot (socket b') True (sentJoin b')
+updateBotSentNick :: Bot -> Bot
+updateBotSentNick b = Bot (socket b) True (sentJoin b)
 
-updateBotSentJoin :: IO Bot -> IO Bot
-updateBotSentJoin b = do b' <- b
-                         return $ Bot (socket b') (sentNick b') True
+updateBotSentJoin :: Bot -> Bot
+updateBotSentJoin b = Bot (socket b) (sentNick b) True
 
 sendNick :: Net ()
 sendNick = do write "NICK" nick
