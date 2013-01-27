@@ -62,8 +62,8 @@ listen h = forever $ do
     io (putStrLn s)
     case g of
         (_, "PING", msg) -> pong msg
-        (_, "NOTICE", _) -> sendNick
-        (_, "MODE", _)   -> sendJoin
+        (_, "NOTICE", _) -> do n <- gets sentNick; unless n sendNick
+        (_, "MODE", _)   -> do j <- gets sentJoin; unless j sendJoin
         _                -> eval g
   where
     extract s           = (prefix s, command s, params s)
