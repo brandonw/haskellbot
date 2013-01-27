@@ -67,8 +67,8 @@ listen h = forever $ do
         _                -> eval g
   where
     extract s           = (prefix s, command s, params s)
-    prefix l@(':' : _)  = takeWhile (/= ' ') l
-    prefix _            = ""
+    prefix l@(':' : _)  = Just $ takeWhile (/= ' ') l
+    prefix _            = Nothing
     command l@(':' : _) = takeWhile (/= ' ') . tail . dropWhile (/= ' ') $ l
     command xs          = takeWhile (/= ' ') xs
     params l@(':' : _)  = tail . dropWhile (/= ' ') . tail . dropWhile (/= ' ') $ l
@@ -90,21 +90,31 @@ sendJoin :: Net ()
 sendJoin = do write "JOIN" channel
               modify updateBotSentJoin
 
-eval :: (String, String, String) -> Net ()
-eval (prefix, "PRIVMSG", params) = evalPM (tail prefix)
+eval :: (Maybe String, String, String) -> Net ()
+eval (Just prefix, "PRIVMSG", params) = evalPM (tail prefix)
                                           (takeWhile (/= ' ') params)
                                           (drop 2 . dropWhile (/= ' ') $ params)
 eval (_, _, _) = return ()
 
 evalPM :: String -> String -> String -> Net ()
-evalPM src dest msg@('!' : _) = evalCommand src dest
-                                            (takeWhile (/= ' ') msg)
-                                            ((tail . dropWhile (/= ' ')) msg)
-evalPM src dest msg           = evalGeneric src dest msg
+evalPM src dest ('!' : cmdMsg) = evalCommand src
+                                             dest
+                                             (takeWhile (/= ' ') cmdMsg)
+                                             (extractCommandParams cmdMsg)
+evalPM src dest msg            = evalGeneric src dest msg
 
-evalCommand :: String -> String -> String  -> String -> Net ()
-evalCommand _ _ "!quit" args  = write "QUIT" $ ':' : args
-evalCommand _ dest "!id" args = privmsg dest args
+extractCommandParams :: String -> Maybe String
+extractCommandParams msg = if suffix == "" || suffix == " "
+                           then Nothing
+                           else Just (tail suffix)
+  where
+    suffix = dropWhile (/= ' ') msg
+
+evalCommand :: String -> String -> String  -> Maybe String -> Net ()
+evalCommand _ _ "quit" (Just args)  = write "QUIT" $ ':' : args
+evalCommand _ _ "quit" Nothing      = write "QUIT" ""
+evalCommand _ dest "id" (Just args) = privmsg dest args
+evalCommand _ _ _ _                  = return ()
 
 evalGeneric :: String -> String -> String -> Net ()
 evalGeneric _ _ _ = return ()
