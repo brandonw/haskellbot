@@ -1,46 +1,38 @@
-import System.Console.GetOpt
-import System.Environment
-import Network
-import System.IO
-import Text.Printf
+import Control.Exception
 import Control.Monad
 import Control.Monad.Reader
-import Control.Exception
 import Control.Monad.State.Lazy
+import Network
+import Options.Applicative
+import System.IO
+import Text.Printf
 
-data Options = Options
-            { optServer  :: String
-            , optPort    :: Int
-            , optChannel :: String
-            , optNick    :: String
-            } deriving (Show)
+data Options = Options String Int String String deriving (Show)
 
-defaultOptions :: Options
-defaultOptions = Options
-  { optServer = ""
-  , optPort = 6667
-  , optChannel = ""
-  , optNick = "haskell-bot"
-  }
-
-options :: [OptDescr (Options -> Options)]
-options =
-  [ Option "s" ["server"]  (ReqArg (\arg opt -> opt { optServer  = arg }) "irc.foo.com")
-    "The hostname to connect to as the IRC server."
-  , Option "p" ["port"]    (ReqArg (\arg opt -> opt { optPort    = read arg }) "6667")
-    "The port to use."
-  , Option "c" ["channel"] (ReqArg (\arg opt -> opt { optChannel = arg }) "\"#test\"")
-    "The channel to join, including the #. Make sure to escape '#' or quote the name."
-  , Option "n" ["nick"]    (ReqArg (\arg opt -> opt { optNick    = arg }) "haskell-bot")
-    "The nick to call the bot."
-  ]
-
-compilerOpts :: [String] -> IO (Options, [String])
-compilerOpts argv =
-  case getOpt Permute options argv of
-    (o,n,[])   -> return (foldl (flip id) defaultOptions o, n)
-    (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
-  where header = "Usage: bot -s SERVER -c \"#CHANNEL\" [-n NICK] [-p PORT]"
+options :: Parser Options
+options = Options
+          <$> strOption
+            (  long "server"
+            <> short 's'
+            <> metavar "HOST"
+            <> help "The hostname to connect to.")
+          <*> option
+            (  long "port"
+            <> short 'p'
+            <> value 6667
+            <> metavar "PORT"
+            <> help "The port to use.")
+          <*> strOption
+            (  long "channel"
+            <> short 'c'
+            <> metavar "CHANNEL"
+            <> help "The channel to join. Make sure to escape as needed.")
+          <*> strOption
+            (  long "nick"
+            <> short 'n'
+            <> value "haskell-bot"
+            <> metavar "NICK"
+            <> help "The nick to identify the bot with.")
 
 data Bot = Bot { socket :: Handle
                , nick :: String
@@ -55,13 +47,15 @@ io :: IO a -> Net a
 io = liftIO
 
 main :: IO ()
-main = do
-  args               <- System.Environment.getArgs
-  (opts, nonOptions) <- compilerOpts args
-  bracket
-    (connect (optServer opts) (optPort opts) (optNick opts) (optChannel opts))
-    disconnect
-    loop
+main = execParser opts >>= start
+  where
+    opts = info (helper <*> options)
+      ( fullDesc
+     <> Options.Applicative.progDesc "Starts an IRC bot."
+     <> header "bot - An irc bot written in Haskell." )
+
+start :: Options -> IO()
+start (Options s p c n) = bracket (connect s p n c) disconnect loop
   where
     disconnect = hClose . socket
     loop       = evalStateT run
