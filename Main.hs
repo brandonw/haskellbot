@@ -1,3 +1,5 @@
+import System.Console.GetOpt
+import System.Environment
 import Network
 import System.IO
 import Text.Printf
@@ -6,21 +8,46 @@ import Control.Monad.Reader
 import Control.Exception
 import Control.Monad.State.Lazy
 
-server :: String
-server = "irc.esper.net"
+data Options = Options
+            { optServer  :: String
+            , optPort    :: Int
+            , optChannel :: String
+            , optNick    :: String
+            } deriving (Show)
 
-port :: Int
-port = 6667
+defaultOptions :: Options
+defaultOptions = Options
+  { optServer = ""
+  , optPort = 6667
+  , optChannel = ""
+  , optNick = "haskell-bot"
+  }
 
-channel :: String
-channel = "#triangle"
+options :: [OptDescr (Options -> Options)]
+options =
+  [ Option "s" ["server"]  (ReqArg (\arg opt -> opt { optServer  = arg }) "irc.foo.com")
+    "The hostname to connect to as the IRC server."
+  , Option "p" ["port"]    (ReqArg (\arg opt -> opt { optPort    = read arg }) "6667")
+    "The port to use."
+  , Option "c" ["channel"] (ReqArg (\arg opt -> opt { optChannel = arg }) "\"#test\"")
+    "The channel to join, including the #. Make sure to escape '#' or quote the name."
+  , Option "n" ["nick"]    (ReqArg (\arg opt -> opt { optNick    = arg }) "haskell-bot")
+    "The nick to call the bot."
+  ]
 
-nick :: String
-nick = "haskellbot"
+compilerOpts :: [String] -> IO (Options, [String])
+compilerOpts argv =
+  case getOpt Permute options argv of
+    (o,n,[])   -> return (foldl (flip id) defaultOptions o, n)
+    (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
+  where header = "Usage: bot -s SERVER -c \"#CHANNEL\" [-n NICK] [-p PORT]"
 
 data Bot = Bot { socket :: Handle
+               , nick :: String
+               , channel :: String
                , sentNick :: Bool
-               , sentJoin :: Bool }
+               , sentJoin :: Bool
+               } deriving (Show, Eq)
 
 type Net = StateT Bot IO
 
@@ -28,19 +55,31 @@ io :: IO a -> Net a
 io = liftIO
 
 main :: IO ()
-main = bracket connect disconnect loop
+main = do
+  args               <- System.Environment.getArgs
+  (opts, nonOptions) <- compilerOpts args
+  bracket
+    (connect (optServer opts) (optPort opts) (optNick opts) (optChannel opts))
+    disconnect
+    loop
   where
     disconnect = hClose . socket
     loop       = evalStateT run
 
-connect :: IO Bot
-connect = notify $ do
-    h <- connectTo server (PortNumber (fromIntegral port))
+connect :: String -> Int -> String -> String -> IO Bot
+connect s p n c = notify $ do
+    h <- connectTo s (PortNumber (fromIntegral p))
     hSetBuffering h NoBuffering
-    return (Bot h False False)
+    return Bot
+        { socket = h
+        , nick = n
+        , channel = c
+        , sentNick = False
+        , sentJoin = False
+        }
   where
     notify = bracket_
-        (printf "Connecting to %s ... " server >> hFlush stdout)
+        (printf "Connecting to %s ... " s >> hFlush stdout)
         (putStrLn "Done.")
 
 run :: Net ()
@@ -76,18 +115,20 @@ listen h = forever $ do
     pong                = write "PONG"
 
 updateBotSentNick :: Bot -> Bot
-updateBotSentNick b = Bot (socket b) True (sentJoin b)
+updateBotSentNick b = b { sentNick = True }
 
 updateBotSentJoin :: Bot -> Bot
-updateBotSentJoin b = Bot (socket b) (sentNick b) True
+updateBotSentJoin b = b { sentJoin = True }
 
 sendNick :: Net ()
-sendNick = do write "NICK" nick
-              write "USER" (nick ++ " 0 * :haskellbot")
+sendNick = do n <- gets nick
+              write "NICK" n
+              write "USER" (n ++ " 0 * :haskellbot")
               modify updateBotSentNick
 
 sendJoin :: Net ()
-sendJoin = do write "JOIN" channel
+sendJoin = do c <- gets channel
+              write "JOIN" c
               modify updateBotSentJoin
 
 eval :: (Maybe String, String, String) -> Net ()
