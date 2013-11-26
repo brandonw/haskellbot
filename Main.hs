@@ -96,7 +96,7 @@ listen h = forever $ do
     case g of
         (_, "PING", msg) -> pong msg
         (_, "NOTICE", _) -> do n <- gets sentNick; unless n sendNick
-        (_, "MODE", _)   -> do j <- gets sentJoin; unless j sendJoin
+        (_, "001", _)   -> do j <- gets sentJoin; unless j sendJoin
         _                -> eval g
   where
     extract s           = (prefix s, command s, params s)
