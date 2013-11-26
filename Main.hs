@@ -52,7 +52,7 @@ main = execParser opts >>= start
     opts = info (helper <*> options)
       ( fullDesc
      <> Options.Applicative.progDesc "Starts an IRC bot."
-     <> header "bot - An irc bot written in Haskell." )
+     <> header "haskell-bot - An irc bot written in Haskell." )
 
 start :: Options -> IO()
 start (Options s p c n) = bracket (connect s p n c) disconnect loop
