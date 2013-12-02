@@ -153,8 +153,10 @@ pong = write "PONG"
 
 getNextMessage :: Handle -> IO (Maybe String)
 getNextMessage h = do
-  r <- init `fmap` hGetLine h
-  return (Just r)
+  r <- try $ init `fmap` hGetLine h
+  case r of
+      Right l                -> return (Just l)
+      Left (SomeException _) -> return Nothing
 
 processMessage :: String -> Net ()
 processMessage msg =
